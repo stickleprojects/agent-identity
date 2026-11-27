@@ -132,3 +132,22 @@ def test_each_repo_has_its_own_apps(agent_env):
     other = identity({**env, "SDLC_AGENT_REPO": "o/jobhunt-app"}, "show")
     assert other.returncode == 1
     assert identity({**env, "SDLC_AGENT_REPO": "o/jobhunt-app"}, "env").stdout == ""
+
+
+def test_check_points_at_the_docs_setting_too(agent_env):
+    # agent-identity#1 review: `check` said .sdlc/docs/... after the move; it follows AGENT_ID_DOCS like `env`.
+    _, env = agent_env
+    other = {**env, "SDLC_AGENT_REPO": "o/none"}
+    out = identity(other, "check")
+    assert out.returncode == 1 and "stickleprojects/agent-identity" in out.stdout and ".sdlc/" not in out.stdout
+
+
+def test_session_hook_is_silent_in_a_repo_without_an_app(agent_env, tmp_path):
+    # agent-identity#1 review: at user scope the hook runs in every repo; where there's no App it says nothing.
+    _, env = agent_env
+    env_file = tmp_path / "claude.env"
+    out = run(["bash", str(REPO / "scripts/session-hook.sh")],
+              env={**env, "SDLC_AGENT_REPO": "o/none", "CLAUDE_ENV_FILE": str(env_file)})
+    assert out.returncode == 0 and out.stderr == "" and out.stdout == ""
+    assert not env_file.exists() or env_file.read_text() == ""
+

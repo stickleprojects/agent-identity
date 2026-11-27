@@ -444,7 +444,7 @@ rekey() {
 }
 
 check() {
-  load_config || { echo "not configured: see .sdlc/docs/agent-identity.md"; exit 1; }
+  load_config || { echo "not configured: see $docs"; exit 1; }
   echo "identity: $identity, app: ${SDLC_AGENT_APP_SLUG}[bot] (id $SDLC_AGENT_APP_ID)"
   echo "repo: $(repo_name)"
   token >/dev/null && echo "ok: a token for this repo was issued"

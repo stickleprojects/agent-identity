@@ -11,4 +11,6 @@ set -euo pipefail
 [[ -n "${CLAUDE_ENV_FILE:-}" ]] || exit 0
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || true
+# Quiet in a repo with no App: installed at user scope, this runs in every repo (agent-identity#1).
+"$here/agent-identity.sh" show >/dev/null 2>&1 || exit 0
 "$here/agent-identity.sh" env >> "$CLAUDE_ENV_FILE" || true

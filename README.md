@@ -31,6 +31,10 @@ The private key stays in the keyring (`secret-tool`, service `claude-sdlc`) or a
 
 **Names:** `AGENT_ID_*` settings are aliases for claude-sdlc's `SDLC_*` ones (`AGENT_ID_REPO` = `SDLC_AGENT_REPO`, `AGENT_ID_GITHUB_API` = `SDLC_GITHUB_API`, …). `SDLC_*` wins when both are set. Config files and the GitHub variables and secret that workflows read (`SDLC_AGENT_APP_ID`, `SDLC_AGENT_APP_SLUG`, `SDLC_AGENT_APP_KEY`) keep their names.
 
+**Updates and the session:** `gh` and git's credential helper in a session call this plugin's scripts by their path in the plugin cache, which is versioned. If the plugin is updated while a session runs, that session's `gh` and `git push` fail until it's restarted. The token cache (`$XDG_RUNTIME_DIR/sdlc-agent-<uid>`) is shared with claude-sdlc's copy on purpose: same format, same App, one token.
+
+**In a repo with no App** (e.g. the plugin enabled at user scope), the session hook stays silent and the session acts as you.
+
 **Not here (stays in claude-sdlc):** `auto-merge.sh`, the production gate, the launcher half of `agent-session.sh`, and CI, which uses `actions/create-github-app-token` with the variables above.
 
 ## Tests
