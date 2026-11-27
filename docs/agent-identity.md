@@ -1,5 +1,7 @@
 # Claude's own GitHub identity
 
+> Moved from claude-sdlc (aws-build-runner#85). In claude-sdlc repos the commands are still at `.sdlc/scripts/`; elsewhere they're this plugin's `scripts/`, e.g. `${CLAUDE_PLUGIN_ROOT}/scripts/agent-identity.sh` or a checkout of this repo.
+
 By default, Claude sessions use your `gh` login and your git credentials, so their commits, PRs and review replies appear under your name. This page sets up a separate identity, a GitHub App, so they appear as `<app>[bot]` instead. GitHub can then also require *your* approval before anything Claude wrote can merge.
 
 ## Who acts as whom
@@ -16,13 +18,13 @@ Claude never acts as you: comments are signed `— Claude`, and each commit carr
 
 ## Set it up (once per repo, about 5 minutes)
 
-For a step-by-step walkthrough with every prompt and page you'll see, read [setup-agent-apps.md](setup-agent-apps.md).
+For a step-by-step walkthrough with every prompt and page you'll see, read [setup-agent-apps.md](setup.md).
 
 Each repo that uses the pipeline gets its own App, named after the repo: `jobhunt-app-claude`. Its key and config are kept per repo, so one repo's App never acts in another (unless you choose to share one).
 
 1. **Create the App,** in the repo:
    ```
-   .sdlc/scripts/agent-identity.sh create
+   scripts/agent-identity.sh create
    ```
    It asks before anything opens:
    - whether to **reuse an App** already on this machine (made for another repo), if there is one;
@@ -39,13 +41,13 @@ Each repo that uses the pipeline gets its own App, named after the repo: `jobhun
 
    **An App created before variables read was added:** on the App's page, under *Permissions & events → Repository permissions*, set **Variables** to *Read-only* and save. Then accept the new permission on each installation (*Settings → GitHub Apps → Configure*, or the email GitHub sends). Until then `.sdlc/scripts/auto-merge.sh` warns that it can't read `SDLC_AUTO_MERGE`, and the PRs Claude opens from a session aren't auto-merged.
 2. **Configure the repo:** `.sdlc/scripts/bootstrap-github.sh --mode team --skip-token`. Step 8 checks the App is installed, and gives the spec workflow the same App (the `SDLC_AGENT_APP_ID`/`_SLUG` variables and the `SDLC_AGENT_APP_KEY` secret). Team mode makes GitHub require a code owner's (your) approval on every PR.
-3. **Check:** `.sdlc/scripts/agent-identity.sh check` should print `ok: a token for this repo was issued`.
+3. **Check:** `scripts/agent-identity.sh check` should print `ok: a token for this repo was issued`.
 
-**Another repo:** run the same three steps there. To use **the same App** there (or for every repo), reuse it when `create` offers it, or run `.sdlc/scripts/agent-identity.sh use <its config file>`, then install the App on the repo.
+**Another repo:** run the same three steps there. To use **the same App** there (or for every repo), reuse it when `create` offers it, or run `scripts/agent-identity.sh use <its config file>`, then install the App on the repo.
 
-**Nothing overwrites anything.** Keys are stored under the App's own name, which is unique on GitHub. A config records where its key is, so repos sharing an App share one key. `create`, `setup` and `use` never replace an existing config without asking (`--force` when scripted). Configs and keys can live anywhere (`--config`, `--config-dir`, `--keys-dir`, `--key-file`, `use <file>`); see [setup-agent-apps.md](setup-agent-apps.md#choosing-where-things-live).
+**Nothing overwrites anything.** Keys are stored under the App's own name, which is unique on GitHub. A config records where its key is, so repos sharing an App share one key. `create`, `setup` and `use` never replace an existing config without asking (`--force` when scripted). Configs and keys can live anywhere (`--config`, `--config-dir`, `--keys-dir`, `--key-file`, `use <file>`); see [setup-agent-apps.md](setup.md#choosing-where-things-live).
 
-**By hand instead:** create the App under *Settings → Developer settings → GitHub Apps* with the permissions above, generate a private key, install it on the repo, and run `.sdlc/scripts/agent-identity.sh setup [--identity <name>] --app-id <id> --key <file.pem>` in that repo.
+**By hand instead:** create the App under *Settings → Developer settings → GitHub Apps* with the permissions above, generate a private key, install it on the repo, and run `scripts/agent-identity.sh setup [--identity <name>] --app-id <id> --key <file.pem>` in that repo.
 
 ## Start sessions as the agent
 

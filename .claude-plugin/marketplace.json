@@ -1,0 +1,11 @@
+{
+  "name": "stickleprojects-agent-identity",
+  "owner": {"name": "stickleprojects"},
+  "plugins": [
+    {
+      "name": "agent-identity",
+      "source": "./",
+      "description": "Claude's own GitHub App identity for Claude Code sessions in a repo."
+    }
+  ]
+}

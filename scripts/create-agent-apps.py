@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Create Claude's GitHub App identity with GitHub's App manifest flow.
 
-Usage: .sdlc/scripts/agent-identity.sh create [--name PREFIX] [--org ORG] [--yes] [--no-browser]
+Usage: agent-identity.sh create [--name PREFIX] [--org ORG] [--yes] [--no-browser]
 
 Run it in each repo that uses the pipeline: the App belongs to that repo, and is named after it
 (<prefix>-claude). It's the identity `agent`, used by every Claude session in the repo and by
@@ -42,8 +42,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-GITHUB = os.environ.get("SDLC_GITHUB_WEB", "https://github.com")
-API = os.environ.get("SDLC_GITHUB_API", "https://api.github.com")
+def setting(name: str, default: str = "") -> str:
+    """SDLC_<name>, or its alias AGENT_ID_<name without AGENT_>: SDLC_* wins when both are set."""
+    alias = "AGENT_ID_" + name.removeprefix("AGENT_")
+    return os.environ.get("SDLC_" + name) or os.environ.get(alias) or default
+
+
+GITHUB = setting("GITHUB_WEB", "https://github.com")
+API = setting("GITHUB_API", "https://api.github.com")
 NAME_LIMIT = 34  # GitHub App names are at most 34 characters
 SUFFIX = "-claude"
 PREFIX_LIMIT = NAME_LIMIT - len(SUFFIX)
@@ -53,10 +59,22 @@ REPO_KEY = ""
 # Where new Apps' private keys go: None means the keyring. --keys-dir or SDLC_AGENT_KEY_STORE_DIR.
 KEYS_DIR: Path | None = None
 
-# What Claude needs: commit and push (workflows too, since builds may change CI), open PRs,
-# comment and label, read CI, and read repo variables (.sdlc/scripts/auto-merge.sh reads
-# SDLC_AUTO_MERGE from a session).
-PERMISSIONS = {
+# Permission profiles (aws-build-runner#85). "sdlc", the default, is what claude-sdlc's pipeline
+# needs: commit and push (workflows too, since builds may change CI), open PRs, comment and label,
+# read CI, and read repo variables (claude-sdlc's auto-merge.sh reads SDLC_AUTO_MERGE from a
+# session). "minimal" is the least an agent needs to work on a repo; add to it with --permission.
+PROFILES = {
+    "minimal": {
+        "contents": "write",
+        "pull_requests": "write",
+        "issues": "write",
+        "metadata": "read",
+        "checks": "read",
+        "statuses": "read",
+    },
+}
+PERMISSION_LEVELS = ("read", "write")
+PROFILES["sdlc"] = {
     "contents": "write",
     "pull_requests": "write",
     "issues": "write",
@@ -67,6 +85,9 @@ PERMISSIONS = {
     "workflows": "write",
     "actions_variables": "read",
 }
+# Set by main() from --profile and --permission; tests may set it directly.
+PERMISSIONS = dict(PROFILES["sdlc"])
+PROFILE = "sdlc"
 
 
 @dataclass
@@ -162,7 +183,7 @@ def manifest(identity: Identity, base_url: str, owner: str, repo: str = "") -> d
     return {
         "name": identity.app_name,
         "url": f"{GITHUB}/{repo or owner}",
-        "description": f"Claude for {repo or owner}, via the claude-sdlc pipeline.",
+        "description": f"Claude for {repo or owner}" + (", via the claude-sdlc pipeline." if PROFILE == "sdlc" else "."),
         "public": False,
         # No hook_attributes: the App uses no webhook, and GitHub rejects a hook URL it can't
         # reach from the internet, even an inactive one (#102). The localhost redirect and
@@ -237,7 +258,7 @@ def recovery_hint(app_name: str, identity: str) -> str:
     return (
         f"{app_name} may already exist on GitHub without its key on this machine. Either:\n"
         f"  - keep it: open {GITHUB}/settings/apps/{app_name}, click 'Generate a private key',"
-        f" then run\n    .sdlc/scripts/agent-identity.sh setup --identity {identity}"
+        f" then run\n    agent-identity.sh setup --identity {identity}"
         " --app-id <its App ID> --key <downloaded .pem>\n"
         f"  - or delete it on that page (Advanced, Delete GitHub App) and run create again\n"
         "  - or run create again with another --name"
@@ -313,7 +334,7 @@ def write_config(identity: Identity, bot: int, key_ref: str) -> Path:
     path = identity.config_path or default
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "# claude-sdlc agent identity (.sdlc/scripts/agent-identity.sh). Not secret: the key\n"
+        "# claude-sdlc agent identity (agent-identity.sh). Not secret: the key\n"
         "# is at SDLC_AGENT_KEY. Several repos may point at this file to share the App.\n"
         f"SDLC_AGENT_APP_ID={identity.app_id}\n"
         f"SDLC_AGENT_APP_SLUG={identity.slug}\n"
@@ -552,14 +573,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--org", help="create the App under this organization, not your account")
     parser.add_argument("--port", type=int, default=0, help="local port (default: any free one)")
     parser.add_argument("--no-browser", action="store_true", help="print the URL instead")
+    parser.add_argument("--profile", choices=sorted(PROFILES), default=setting("AGENT_PROFILE", "sdlc"),
+                        help="the App's permission set (default sdlc; env AGENT_ID_PROFILE)")
+    parser.add_argument("--permission", action="append", default=[], metavar="NAME=LEVEL",
+                        help="add or change one permission on top of the profile, e.g. workflows=write")
     args = parser.parse_args(argv)
+    global PERMISSIONS, PROFILE
+    PROFILE = args.profile
+    PERMISSIONS = dict(PROFILES[args.profile])
+    for item in args.permission:
+        name, _, level = item.partition("=")
+        if not re.fullmatch(r"[a-z_]+", name) or level not in PERMISSION_LEVELS:
+            parser.error(f"--permission wants NAME=read|write, got {item!r}")
+        PERMISSIONS[name] = level
 
     global REPO_KEY, KEYS_DIR
     repo = repo_from_git()
     if not repo:
-        raise SystemExit("run this in a repo whose origin is on GitHub (or set SDLC_AGENT_REPO)")
+        raise SystemExit("run this in a repo whose origin is on GitHub (or set AGENT_ID_REPO or SDLC_AGENT_REPO)")
     REPO_KEY = repo_key(repo)
-    keys = args.keys_dir or os.environ.get("SDLC_AGENT_KEY_STORE_DIR")
+    keys = args.keys_dir or setting("AGENT_KEY_STORE_DIR")
     KEYS_DIR = Path(keys).expanduser() if keys else None
     owner = args.org or repo.split("/")[0]
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
@@ -635,7 +668,10 @@ def main(argv: list[str] | None = None) -> int:
     for ident in flow.skipped:
         print(f"Skipped {ident.app_name}. If GitHub said the name is taken:")
         print(recovery_hint(ident.app_name, ident.name))
-    print("Next, in this repo: .sdlc/scripts/bootstrap-github.sh --mode team --skip-token")
+    if PROFILE == "sdlc":
+        print("Next, in this repo: .sdlc/scripts/bootstrap-github.sh --mode team --skip-token")
+    else:
+        print("Next: agent-identity.sh doctor, then require your review on main (branch protection).")
     return 0 if finished else 1
 
 

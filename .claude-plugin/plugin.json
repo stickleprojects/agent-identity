@@ -1,0 +1,10 @@
+{
+  "name": "agent-identity",
+  "version": "0.1.0",
+  "description": "Claude's own GitHub App identity in a repo: one-click App creation, the key in the keyring, 1-hour tokens, and a SessionStart hook so every session commits, pushes and comments as <app>[bot], never as the person. Extracted from claude-sdlc.",
+  "author": {
+    "name": "stickleprojects"
+  },
+  "homepage": "https://github.com/stickleprojects/agent-identity",
+  "repository": "https://github.com/stickleprojects/agent-identity"
+}
