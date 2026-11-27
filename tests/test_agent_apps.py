@@ -1,4 +1,4 @@
-""".sdlc/scripts/create-agent-apps.py: creating the agent's GitHub App with the manifest flow."""
+"""scripts/create-agent-apps.py: creating the agent's GitHub App with the manifest flow."""
 
 import importlib.util
 import json
@@ -16,7 +16,7 @@ from conftest import REPO, run
 
 @pytest.fixture
 def apps(monkeypatch, tmp_path):
-    script = REPO / ".sdlc/scripts/create-agent-apps.py"
+    script = REPO / "scripts/create-agent-apps.py"
     spec = importlib.util.spec_from_file_location("apps", script)
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "apps", module)  # dataclasses look the module up
@@ -153,7 +153,7 @@ def test_repo_key_matches_the_bash_side(apps, tmp_path):
     (tmp_path / "sdlc/stickleprojects_jobhunt-app/agent.env").write_text(
         "SDLC_AGENT_APP_ID=1\nSDLC_AGENT_APP_SLUG=jobhunt-app-claude\n"
     )
-    out = run(["bash", str(REPO / ".sdlc/scripts/agent-identity.sh"), "show"], env=env)
+    out = run(["bash", str(REPO / "scripts/agent-identity.sh"), "show"], env=env)
     assert out.stdout.strip() == "1 jobhunt-app-claude"
 
 
@@ -421,3 +421,52 @@ def test_store_key_puts_the_key_in_the_keyring_with_its_label(apps, monkeypatch)
         "github-app-private-key:my-app",
     ]
     assert kw["input"] == "-----BEGIN KEY-----" and kw["check"] is True
+
+
+
+def test_permission_profiles(apps):
+    # aws-build-runner#85: the permission set is a profile, not hard-coded. "sdlc" (the default)
+    # keeps claude-sdlc's; "minimal" leaves out workflows, actions and repo variables.
+    assert apps.PROFILE == "sdlc" and apps.PERMISSIONS == apps.PROFILES["sdlc"]
+    assert apps.PROFILES["sdlc"]["actions_variables"] == "read"
+    minimal = apps.PROFILES["minimal"]
+    assert not {"workflows", "actions_variables", "actions"} & set(minimal)
+    assert minimal["contents"] == "write" and minimal["metadata"] == "read"
+
+
+def _main_until_repo(apps, monkeypatch, *argv):
+    """Run main() with argv up to the point it looks for the repo, which here finds none."""
+    monkeypatch.setattr(apps, "repo_from_git", lambda: "")
+    try:
+        apps.main(list(argv))
+    except SystemExit as e:
+        return e.code
+    return 0
+
+
+def test_profile_and_permission_options_set_what_the_app_asks_for(apps, monkeypatch):
+    _main_until_repo(apps, monkeypatch, "--profile", "minimal", "--permission", "workflows=write",
+                     "--permission", "actions=write", "--yes", "--no-browser")
+    assert apps.PROFILE == "minimal"
+    assert apps.PERMISSIONS["workflows"] == "write" and apps.PERMISSIONS["actions"] == "write"
+    assert "actions_variables" not in apps.PERMISSIONS
+    assert apps.new_identity("x").permissions == apps.PERMISSIONS
+
+
+def test_the_profile_can_come_from_the_environment(apps, monkeypatch):
+    monkeypatch.setenv("AGENT_ID_PROFILE", "minimal")
+    _main_until_repo(apps, monkeypatch, "--yes", "--no-browser")
+    assert apps.PROFILE == "minimal"
+
+
+def test_a_bad_permission_option_is_refused(apps, monkeypatch):
+    for bad in ("workflows", "workflows=admin", "Bad Name=read"):
+        assert _main_until_repo(apps, monkeypatch, "--permission", bad, "--yes", "--no-browser") == 2, bad
+
+
+def test_only_the_sdlc_profile_mentions_the_pipeline(apps):
+    agent = apps.new_identity("x")
+    apps.PROFILE = "sdlc"
+    assert "claude-sdlc" in json.dumps(apps.manifest(agent, "http://127.0.0.1:1", "o", "r"))
+    apps.PROFILE = "minimal"
+    assert "claude-sdlc" not in json.dumps(apps.manifest(agent, "http://127.0.0.1:1", "o", "r"))

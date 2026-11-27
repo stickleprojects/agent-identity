@@ -6,37 +6,37 @@
 # workflow. The identity name is a parameter (SDLC_AGENT_IDENTITY_NAME, --identity), so a
 # second App can be added later without changing how the first one works.
 #
-# Usage: .sdlc/scripts/agent-identity.sh create [--name <app name>] [--org <org>]
+# Usage: agent-identity.sh create [--name <app name>] [--org <org>]
 #          Create the App in your browser with GitHub's manifest flow, and store it as `setup`
 #          would.
-#        .sdlc/scripts/agent-identity.sh use <app config file> [--identity <name>] [--force]
+#        agent-identity.sh use <app config file> [--identity <name>] [--force]
 #          Share an App that already exists (made for another repo, or a shared config kept
 #          wherever you like): point this repo's identity at its config. Creates nothing and
 #          copies no key, so every repo using it shares the one App and the one key.
-#        .sdlc/scripts/agent-identity.sh setup [--identity <name>] --app-id <id> --key <file.pem>
+#        agent-identity.sh setup [--identity <name>] --app-id <id> --key <file.pem>
 #                                         [--config <file>] [--key-file <path>] [--force]
 #          One-off per machine. Stores the App's private key in the keyring (secret-tool,
 #          i.e. Seahorse on GNOME) and its id, slug and bot user in
 #          ~/.config/sdlc/<owner>_<repo>/<name>.env.
-#        .sdlc/scripts/agent-identity.sh doctor
+#        agent-identity.sh doctor
 #          Check every link (config, key, GitHub accepting it, installation, token) and say how
 #          to fix the first broken one.
-#        .sdlc/scripts/agent-identity.sh rekey [--key <new .pem>] [--yes]
+#        agent-identity.sh rekey [--key <new .pem>] [--yes]
 #          Swap in a new private key you generated on the App's page (the App itself stays).
 #          Refuses a key GitHub doesn't accept for this App; asks before replacing.
-#        .sdlc/scripts/agent-identity.sh check
+#        agent-identity.sh check
 #          Is the App configured, installed on this repo, and able to issue a token?
-#        .sdlc/scripts/agent-identity.sh show
+#        agent-identity.sh show
 #          Print "<app id> <app slug>" (for bootstrap-github.sh); exit 1 if not configured.
-#        .sdlc/scripts/agent-identity.sh key
+#        agent-identity.sh key
 #          Print the private key, for storing it as the SDLC_AGENT_APP_KEY Actions secret.
-#        .sdlc/scripts/agent-identity.sh token
+#        agent-identity.sh token
 #          Print an installation token for this repo (cached; renewed when <10 minutes remain).
-#        .sdlc/scripts/agent-identity.sh git-credential get
+#        agent-identity.sh git-credential get
 #          Git credential helper: answers with the token for github.com.
-#        .sdlc/scripts/agent-identity.sh env
+#        agent-identity.sh env
 #          Print `export` lines that make git and gh in a session act as the App. Used by
-#          .sdlc/scripts/agent-session.sh and the SessionStart hook in .sdlc/docs/agent-identity.md.
+#          the SessionStart hook (scripts/session-hook.sh).
 #          Prints nothing when the App isn't configured, so sessions fall back to the person.
 #
 # Env: SDLC_AGENT_CONFIG  config file (default ~/.config/sdlc/<owner>_<repo>/<identity>.env)
@@ -48,6 +48,17 @@
 # Tokens last one hour and are scoped to this repo's installation. Nothing long-lived is
 # written to disk: the key stays in the keyring and the token cache lives in $XDG_RUNTIME_DIR.
 set -euo pipefail
+
+# AGENT_ID_* names (stickleprojects/agent-identity) are aliases for the SDLC_* names claude-sdlc
+# has always used; either works, and SDLC_* wins when both are set. Config files keep SDLC_AGENT_*.
+for pair in CONFIG:SDLC_AGENT_CONFIG KEY_STORE_DIR:SDLC_AGENT_KEY_STORE_DIR KEY_FILE:SDLC_AGENT_KEY_FILE \
+            REPO:SDLC_AGENT_REPO NAME:SDLC_AGENT_IDENTITY_NAME GITHUB_API:SDLC_GITHUB_API \
+            GITHUB_WEB:SDLC_GITHUB_WEB RETRY_DELAY:SDLC_RETRY_DELAY; do
+  alias="AGENT_ID_${pair%%:*}" name="${pair#*:}"
+  if [[ -n "${!alias:-}" && -z "${!name:-}" ]]; then export "$name=${!alias}"; fi
+done
+# Where "not configured" points people (claude-sdlc's shim sets its own docs).
+docs="${AGENT_ID_DOCS:-https://github.com/stickleprojects/agent-identity#readme}"
 
 self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 api="${SDLC_GITHUB_API:-https://api.github.com}"
@@ -243,7 +254,7 @@ git_credential() {
 print_env() {
   [[ $# -eq 0 ]] || die "unknown env option: $1"
   if ! load_config; then
-    echo "agent-identity: identity '$identity' not configured; this session acts as you (see .sdlc/docs/agent-identity.md)" >&2
+    echo "agent-identity: identity '$identity' not configured; this session acts as you (see $docs)" >&2
     return 0
   fi
   local bin="$runtime/bin" real_gh name email requester
@@ -258,12 +269,13 @@ export GH_TOKEN
 exec "$real_gh" "\$@"
 EOF
   chmod 700 "$bin/gh"
-  name="$SDLC_AGENT_APP_SLUG[bot]"
-  email="${SDLC_AGENT_BOT_ID:-0}+$SDLC_AGENT_APP_SLUG[bot]@users.noreply.github.com"
+  name="${SDLC_AGENT_APP_SLUG}[bot]"
+  email="${SDLC_AGENT_BOT_ID:-0}+${SDLC_AGENT_APP_SLUG}[bot]@users.noreply.github.com"
   requester="$(git config user.name 2>/dev/null || true)"
   cat <<EOF
 export SDLC_AGENT_IDENTITY='$name' SDLC_AGENT_IDENTITY_NAME='$identity'
 export SDLC_AGENT_REQUESTED_BY='${requester//\'/}'
+export AGENT_ID_IDENTITY='$name' AGENT_ID_NAME='$identity' AGENT_ID_REQUESTED_BY='${requester//\'/}'
 export PATH='$bin':"\$PATH"
 export GIT_AUTHOR_NAME='$name' GIT_AUTHOR_EMAIL='$email'
 export GIT_COMMITTER_NAME='$name' GIT_COMMITTER_EMAIL='$email'
@@ -311,7 +323,7 @@ setup() {
   bot_id="$(curl -fsS "$api/users/$slug%5Bbot%5D" | jq -r .id)" || bot_id=0
   mkdir -p "$(dirname "$target")"
   {
-    echo "# claude-sdlc agent identity (.sdlc/scripts/agent-identity.sh). Not secret: the key is at"
+    echo "# Agent identity (agent-identity.sh, stickleprojects/agent-identity). Not secret: the key is at"
     echo "# SDLC_AGENT_KEY. Several repos may point at this file to share the App."
     echo "SDLC_AGENT_APP_ID=$app_id"
     echo "SDLC_AGENT_APP_SLUG=$slug"
@@ -319,7 +331,7 @@ setup() {
     echo "SDLC_AGENT_KEY=$ref"
   } > "$target"
   write_pointer "$target"
-  echo "wrote $target: $slug[bot] (app $app_id), key at $ref"
+  echo "wrote $target: ${slug}[bot] (app $app_id), key at $ref"
   echo "now delete the downloaded key file ($key)"
 }
 
@@ -345,7 +357,7 @@ use_app() {
     guard_overwrite "$default_config" "$force"
   fi
   write_pointer "$abs"
-  echo "$identity in $(repo_name) now uses $SDLC_AGENT_APP_SLUG[bot] ($abs)"
+  echo "$identity in $(repo_name) now uses ${SDLC_AGENT_APP_SLUG}[bot] ($abs)"
   if token >/dev/null 2>&1; then echo "ok: it can act on $(repo_name)"
   else echo "install it on $(repo_name): https://github.com/apps/$SDLC_AGENT_APP_SLUG/installations/new"
   fi
@@ -380,7 +392,7 @@ doctor() {
   echo "  ok:   installed on $repo"
   rm -f "$runtime/$identity-${repo//\//_}.json"
   (token) >/dev/null 2>"$err" || fail "no token: $(tr '\n' ' ' <"$err")" "see the message above"
-  echo "  ok:   token issued: $slug[bot] can act on $repo"
+  echo "  ok:   token issued: ${slug}[bot] can act on $repo"
   rm -f "$err"
 }
 
@@ -432,8 +444,8 @@ rekey() {
 }
 
 check() {
-  load_config || { echo "not configured: see .sdlc/docs/agent-identity.md"; exit 1; }
-  echo "identity: $identity, app: $SDLC_AGENT_APP_SLUG[bot] (id $SDLC_AGENT_APP_ID)"
+  load_config || { echo "not configured: see $docs"; exit 1; }
+  echo "identity: $identity, app: ${SDLC_AGENT_APP_SLUG}[bot] (id $SDLC_AGENT_APP_ID)"
   echo "repo: $(repo_name)"
   token >/dev/null && echo "ok: a token for this repo was issued"
 }

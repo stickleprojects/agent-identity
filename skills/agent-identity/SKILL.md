@@ -1,9 +1,13 @@
-<!-- The frontmatter for this skill is in .claude/skills/sdlc-agent-identity/SKILL.md, which Claude Code reads. Projects change this
-file with an override in .sdlc-local/ (see .sdlc/docs/overrides.md), never by editing it. -->
+---
+name: agent-identity
+description: How Claude acts on GitHub, under its own identity or the person's: who commits, how comments are signed, and the rules that stop agents triggering each other or fighting over a branch. Apply whenever you commit, push, open or update a PR, or post a comment or reply on GitHub.
+user-invocable: false
+---
+<!-- From claude-sdlc's .sdlc/skills/agent-identity/SKILL.md (v0.20.0), moved to stickleprojects/agent-identity (aws-build-runner#85). -->
 
 # Acting on GitHub as the agent
 
-Claude sessions can run under their own GitHub identity, a GitHub App that shows as `<app>[bot]` (see `.sdlc/docs/agent-identity.md`). When they do, the environment has `SDLC_AGENT_IDENTITY` set, and `git` and `gh` already commit, push and comment as the App. You don't need to log in or pass tokens.
+Claude sessions can run under their own GitHub identity, a GitHub App that shows as `<app>[bot]` (see this plugin's `docs/agent-identity.md`). When they do, the environment has `SDLC_AGENT_IDENTITY` set, and `git` and `gh` already commit, push and comment as the App. You don't need to log in or pass tokens.
 
 Check which applies: `echo "${SDLC_AGENT_IDENTITY:-person}"`.
 
@@ -32,13 +36,13 @@ Use `gh api` (REST). `gh pr create`, `gh pr view`, `gh pr edit` and `gh issue vi
 
 ## Right after opening a PR
 
-Run `.sdlc/scripts/auto-merge.sh <N>` on the PR you just opened, and pass on the line it prints. It turns on auto-merge only where the repo opted in (`SDLC_AUTO_MERGE`) and a person's approval is still required, so the approval stays the gate. Otherwise it says why it didn't, or prints nothing when the repo hasn't opted in. Run it straight away: GitHub refuses once a PR is approved and green. Never enable auto-merge any other way (`gh pr merge --auto`, the GraphQL mutation); a hook blocks both. <!-- rule: identity.auto-merge -->
+If the repo has an auto-merge helper (claude-sdlc's is `.sdlc/scripts/auto-merge.sh <N>`), run it on the PR you just opened and pass on the line it prints. It turns on auto-merge only where the repo opted in and a person's approval is still required, so the approval stays the gate. Run it straight away: GitHub refuses once a PR is approved and green. Where the repo's own instructions say how to arm auto-merge, follow them; never use it to get past a required approval. <!-- rule: identity.auto-merge -->
 
 ## Rules that prevent loops and conflicts
 
 1. **Act only when a person asks,** in this session. Never start work because a bot commented, a review finished or a check failed, unless the person asked you to watch for it. <!-- rule: identity.act-when-asked -->
 2. **Never @-mention anyone** in comments, replies, commits or PR bodies, bots and people alike. Write a name without the `@`. Above all, never write `@claude`: it starts the mention bot, which is a second agent. <!-- rule: identity.no-mentions -->
 3. **One actor per finding.** A review finding is handled by this session or by the GitHub bot (`@claude`), never both: two agents fixing one finding make conflicting commits. The bot owns a thread with an `@claude` comment on it, or one an `@claude` PR comment names; leave it. <!-- rule: identity.one-actor -->
-4. **Before every push, fetch and merge.** Run `git fetch origin <branch>` and `git log --format='%h %an %s' HEAD..origin/<branch>`. Anything there was pushed by someone else, whoever it was: a person, the bot (`claude[bot]`, `github-actions[bot]`), or another session using this same identity. Show it, merge it (never rebase a pushed branch), re-run `make local-check`, then push. <!-- rule: identity.fetch-merge -->
+4. **Before every push, fetch and merge.** Run `git fetch origin <branch>` and `git log --format='%h %an %s' HEAD..origin/<branch>`. Anything there was pushed by someone else, whoever it was: a person, the bot (`claude[bot]`, `github-actions[bot]`), or another session using this same identity. Show it, merge it (never rebase a pushed branch), re-run the repo's local checks (claude-sdlc: `make local-check`), then push. <!-- rule: identity.fetch-merge -->
 5. **Never force-push** (a hook blocks it), and never delete a branch someone else pushed to. <!-- rule: identity.no-force-push -->
 6. **Approving and merging stay with people.** With your own identity, branch protection requires a person's approval. Never ask for a workaround, and never approve anything, even someone else's PR. Auto-merge through `.sdlc/scripts/auto-merge.sh` doesn't change this: it merges only after a person approves. <!-- rule: identity.people-approve -->

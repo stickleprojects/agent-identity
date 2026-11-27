@@ -1,6 +1,8 @@
 # Setting up Claude's GitHub App: what you'll see
 
-This is a walkthrough of `.sdlc/scripts/agent-identity.sh create`, the command that gives Claude its own GitHub identity in a repo, so its commits, PRs and review replies stop appearing under your name. For what the identity does and why, see [agent-identity.md](agent-identity.md).
+> Moved from claude-sdlc (aws-build-runner#85). In claude-sdlc repos the commands are still at `.sdlc/scripts/`; elsewhere they're this plugin's `scripts/`, e.g. `${CLAUDE_PLUGIN_ROOT}/scripts/agent-identity.sh` or a checkout of this repo.
+
+This is a walkthrough of `scripts/agent-identity.sh create`, the command that gives Claude its own GitHub identity in a repo, so its commits, PRs and review replies stop appearing under your name. For what the identity does and why, see [agent-identity.md](agent-identity.md).
 
 **Run it once in each repo that uses the pipeline** (jobhunt-app, sdlc-sandbox, …). A new App is named after the repo: `jobhunt-app-claude`. You can also **reuse** an App you already have, so one App can serve every repo (step 2).
 
@@ -10,7 +12,7 @@ It takes about 5 minutes. You need a browser where you're signed in to GitHub as
 
 ```
 cd ~/code/jobhunt-app
-.sdlc/scripts/agent-identity.sh create
+scripts/agent-identity.sh create
 ```
 
 Nothing is created and no browser page opens until you've answered the questions and said yes.
@@ -104,7 +106,7 @@ Next, in this repo: .sdlc/scripts/bootstrap-github.sh --mode team --skip-token
 
 Step 8 of the output checks the App can act on the repo. If it says `install … on <repo>`, use the link it prints. It also gives the spec workflow the same App. *Team mode* makes GitHub require your approval on every PR, now that Claude, not you, is the author.
 
-To check: `.sdlc/scripts/agent-identity.sh check` prints `ok: a token for this repo was issued`.
+To check: `scripts/agent-identity.sh check` prints `ok: a token for this repo was issued`.
 
 From then on, every Claude session in this repo commits, pushes and comments as the App. A SessionStart hook in `.claude/settings.json` takes care of that.
 
@@ -114,7 +116,7 @@ The default places are above. Everything can go elsewhere:
 
 | You want | Use |
 |---|---|
-| **One App for every repo** | Create it once (anywhere). In every other repo, run `create` and reuse it (step 2), or run `.sdlc/scripts/agent-identity.sh use <its config file>` |
+| **One App for every repo** | Create it once (anywhere). In every other repo, run `create` and reuse it (step 2), or run `scripts/agent-identity.sh use <its config file>` |
 | The new App's config in a file you name, e.g. one shared file | `create --config ~/claude/shared-claude.env` |
 | The new App's config in a folder you choose | `create --config-dir ~/claude/apps` (named after the App, e.g. `jobhunt-app-claude.env`) |
 | The key as a file instead of the keyring | `create --keys-dir ~/claude/keys` (`<app>.pem`, mode 600) |
@@ -128,14 +130,14 @@ When a config lives somewhere other than the default place, the default place ge
 Start with:
 
 ```
-.sdlc/scripts/agent-identity.sh doctor
+scripts/agent-identity.sh doctor
 ```
 
 It checks each link in turn: the config, the key, whether GitHub accepts the key, whether the App is installed on this repo, and a token. It stops at the first broken one, with the fix:
 
 | What you see | What it means | What to do |
 |---|---|---|
-| GitHub says **"Name has already been taken"** while creating | You (or someone) made an App with that name before | Keep it: on its page (`https://github.com/settings/apps/<name>`) click **Generate a private key**, then `.sdlc/scripts/agent-identity.sh setup --app-id <its App ID> --key <the .pem>`. Or delete it there (*Advanced → Delete GitHub App*) and run `create` again, or use another name. Skip the App on the local page (*skip this App*), and the terminal prints these options. |
+| GitHub says **"Name has already been taken"** while creating | You (or someone) made an App with that name before | Keep it: on its page (`https://github.com/settings/apps/<name>`) click **Generate a private key**, then `scripts/agent-identity.sh setup --app-id <its App ID> --key <the .pem>`. Or delete it there (*Advanced → Delete GitHub App*) and run `create` again, or use another name. Skip the App on the local page (*skip this App*), and the terminal prints these options. |
 | The local page says **"GitHub didn't hand over the App"** | The App was made, but the one-time code expired (codes last an hour, and work once), timed out or came back incomplete. Nothing was saved | Same options as above (the App may exist without its key), or **Try again** |
 | GitHub asks you to **sign in** and then shows an empty form | The pre-filled form didn't survive the sign-in | Go back to the local page and continue again |
 | GitHub says you **can't create Apps** (organizations) | Creating Apps in an organization needs an owner or "App manager" | Ask an owner, or create it under your own account (drop `--org`) |
@@ -149,7 +151,7 @@ It checks each link in turn: the config, the key, whether GitHub accepts the key
 An App can have several private keys, and an old key keeps working until you delete it. So a key can be replaced safely, and only deliberately:
 
 1. On the App's page, `https://github.com/settings/apps/<name>`, under *Private keys*, click **Generate a private key**. A `.pem` downloads. GitHub has no API for this, so it can't happen by accident.
-2. Run `.sdlc/scripts/agent-identity.sh rekey --key <the .pem>`. It checks first that GitHub accepts the key **for that App**, and refuses anything else. Then it asks before replacing the stored key, because every repo sharing the App uses it. Scripted: add `--yes`.
+2. Run `scripts/agent-identity.sh rekey --key <the .pem>`. It checks first that GitHub accepts the key **for that App**, and refuses anything else. Then it asks before replacing the stored key, because every repo sharing the App uses it. Scripted: add `--yes`.
 3. Update CI in each repo that uses the App: `.sdlc/scripts/bootstrap-github.sh --update-agent-key --skip-token`.
 4. Delete the old key on the App's page, and the downloaded `.pem`.
 
@@ -158,7 +160,7 @@ Deleting and re-creating the App is only needed when the App itself has been del
 ## Without prompts (scripts, CI machines)
 
 ```
-.sdlc/scripts/agent-identity.sh create --name jobhunt-app --yes
+scripts/agent-identity.sh create --name jobhunt-app --yes
 ```
 
 Without a terminal and without `--name`, the prefix is the repo's name. Other options:
