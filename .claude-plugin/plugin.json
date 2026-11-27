@@ -6,5 +6,6 @@
     "name": "stickleprojects"
   },
   "homepage": "https://github.com/stickleprojects/agent-identity",
-  "repository": "https://github.com/stickleprojects/agent-identity"
+  "repository": "https://github.com/stickleprojects/agent-identity",
+  "license": "MIT"
 }
